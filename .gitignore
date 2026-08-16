@@ -1,0 +1,4 @@
+.env
+billsummaries.log
+output/
+**/__pycache__

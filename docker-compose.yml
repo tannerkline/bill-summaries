@@ -1,0 +1,29 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    environment:
+      # The Ollama container is named "ollama" on the shared Docker network.
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen3.6:35b}
+      - OLLAMA_TIMEOUT_SECONDS=${OLLAMA_TIMEOUT_SECONDS:-600}
+      - OLLAMA_THINK=${OLLAMA_THINK:-false}
+      - CONGRESS_API_KEY=${CONGRESS_API_KEY}
+      - CONGRESS_API_TIMEOUT_SECONDS=${CONGRESS_API_TIMEOUT_SECONDS:-30}
+      - CONGRESS_BILL_TEXT_MAX_CHARACTERS=${CONGRESS_BILL_TEXT_MAX_CHARACTERS:-100000}
+      # Keep social-media credentials at runtime; do not bake them into the image.
+      - TWITTER_API_KEY=${TWITTER_API_KEY}
+      - TWITTER_API_KEY_SECRET=${TWITTER_API_KEY_SECRET}
+      - TWITTER_ACCESS_TOKEN=${TWITTER_ACCESS_TOKEN}
+      - TWITTER_ACCESS_SECRET=${TWITTER_ACCESS_SECRET}
+    networks:
+      - hermes-net
+    volumes:
+      # Retain dry-run review artifacts after `docker compose run --rm` exits.
+      - ./output:/usr/src/app/output
+
+networks:
+  hermes-net:
+    external: true
+    name: ${OLLAMA_NETWORK:-hermes-net}
