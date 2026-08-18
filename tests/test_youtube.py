@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 import os
 import sys
@@ -6,6 +7,8 @@ import types
 import unittest
 from unittest.mock import Mock, patch
 
+from app import _youtube_metadata
+from util.congress_api import CongressBill
 from social.youtube import _credentials_from_environment, _upload_configuration, create_post
 
 
@@ -13,6 +16,28 @@ class YouTubeUploadTests(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_defaults_upload_visibility_to_public(self) -> None:
         self.assertEqual(_upload_configuration(), ("public", False))
+
+    def test_youtube_metadata_includes_relevant_hashtags_and_tags(self) -> None:
+        bill = CongressBill(
+            legislation_number="H.R. 42",
+            url="https://example.test/bill",
+            congress="119",
+            title="A Vaccine Access Act",
+            sponsor="Example Sponsor",
+            sponsor_party="I",
+            date_of_introduction=date(2026, 1, 3),
+            latest_action="Referred to committee",
+            latest_action_date=date(2026, 8, 13),
+            latest_summary="Official source text",
+            summary_source="official CRS summary",
+        )
+
+        _, description, tags = _youtube_metadata(bill, "Improves vaccine access.")
+
+        self.assertIn("#Shorts #Politics #Congress #Bill #Law", description)
+        self.assertIn("#Vaccines", description)
+        self.assertIn("Congress", tags)
+        self.assertIn("Vaccines", tags)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_skips_when_no_oauth_token_is_configured(self) -> None:

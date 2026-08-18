@@ -276,12 +276,29 @@ def _draw_lines(
     return y
 
 
+def _draw_centered_lines(
+    draw: ImageDraw.ImageDraw,
+    lines: list[str],
+    y: int,
+    font: ImageFont.FreeTypeFont,
+    fill: str,
+    line_height: int,
+    line_spacing: int,
+) -> int:
+    """Draw a bounded text block with each line centered on the card."""
+    for line in lines:
+        _draw_centered(draw, line, y, font, fill)
+        y += line_height + line_spacing
+    return y
+
+
 def text_to_image(text: str, image_path: str) -> None:
     """Render a polished 1080 by 1920 brief card from post copy.
 
-    The layout intentionally favors the document title and the AI summary over
-    publishing metadata. Full source links remain in the post description; the
-    card keeps a small source attribution for trust and context.
+    The layout intentionally foregrounds the latest action, document title, and
+    AI summary over publishing metadata. Full source links remain in the post
+    description; the card keeps a small source attribution for trust and
+    context.
     """
     card = _parse_story_card(text)
     image = _background()
@@ -290,7 +307,6 @@ def text_to_image(text: str, image_path: str) -> None:
     brand_font = _font(26)
     category_font = _font(24)
     identifier_font = _font(52)
-    event_font = _font(27)
     _draw_centered(draw, "BILL SUMMARIES", 58, brand_font, PAPER)
     _draw_centered(draw, "─  PUBLIC RECORD, PLAIN LANGUAGE  ─", 106, category_font, SKY)
 
@@ -304,15 +320,32 @@ def text_to_image(text: str, image_path: str) -> None:
     _draw_centered(draw, pill_text, 182, category_font, INK)
 
     _draw_centered(draw, card.identifier, 260, identifier_font, PAPER)
-    event_text = _ellipsize(draw, card.event.upper(), event_font, IMAGE_WIDTH - 180)
-    _draw_centered(draw, event_text, 335, event_font, MUTED_SKY)
-    draw.line((352, 390, 728, 390), fill=GOLD, width=4)
+    action_label = "SIGNED" if card.category == "EXECUTIVE ORDER" else "LATEST ACTION"
+    _draw_centered(draw, action_label, 331, _font(22), GOLD)
+    event_font, event_lines, event_height, event_spacing = _fit_text(
+        draw,
+        card.event,
+        IMAGE_WIDTH - 180,
+        110,
+        range(30, 19, -1),
+        0.16,
+    )
+    _draw_centered_lines(
+        draw,
+        event_lines,
+        366,
+        event_font,
+        MUTED_SKY,
+        event_height,
+        event_spacing,
+    )
+    draw.line((352, 478, 728, 478), fill=GOLD, width=4)
 
     title_font, title_lines, title_height, title_spacing = _fit_text(
         draw,
         card.title,
         IMAGE_WIDTH - IMAGE_MARGIN * 2,
-        285,
+        225,
         range(54, 31, -2),
         0.18,
     )
@@ -320,7 +353,7 @@ def text_to_image(text: str, image_path: str) -> None:
         draw,
         title_lines,
         IMAGE_MARGIN,
-        438,
+        512,
         title_font,
         PAPER,
         title_height,

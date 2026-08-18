@@ -2,9 +2,15 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
-from util.text_to_image import IMAGE_HEIGHT, IMAGE_WIDTH, _parse_story_card, text_to_image
+from util.text_to_image import (
+    IMAGE_HEIGHT,
+    IMAGE_WIDTH,
+    _fit_text,
+    _parse_story_card,
+    text_to_image,
+)
 
 
 EXECUTIVE_ORDER_COPY = """Executive Order 14420 signed on 2026-08-10
@@ -58,6 +64,23 @@ Creates an example program."""
                 self.assertEqual(image.size, (IMAGE_WIDTH, IMAGE_HEIGHT))
                 self.assertEqual(image.mode, "RGB")
                 self.assertNotEqual(image.getpixel((0, 0)), image.getpixel((0, IMAGE_HEIGHT - 1)))
+
+    def test_long_latest_action_wraps_instead_of_being_cut_to_one_line(self) -> None:
+        image = Image.new("RGB", (IMAGE_WIDTH, IMAGE_HEIGHT))
+        draw = ImageDraw.Draw(image)
+        action = (
+            "Referred to the House Committee on Energy and Commerce, and then "
+            "ordered to be reported with an amendment"
+        )
+
+        font, lines, _, _ = _fit_text(
+            draw, action, IMAGE_WIDTH - 180, 110, range(30, 19, -1), 0.16
+        )
+
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(
+            all(draw.textlength(line, font=font) <= IMAGE_WIDTH - 180 for line in lines)
+        )
 
 
 if __name__ == "__main__":

@@ -6,7 +6,17 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from app import _fetch_documents, _write_debug_artifacts, clean_summary_for_post, main, parse_date
+from app import (
+    _document_hashtags,
+    _fetch_documents,
+    _narration_copy,
+    _write_debug_artifacts,
+    clean_summary_for_post,
+    main,
+    parse_date,
+)
+from util.congress_api import CongressBill
+from util.debug_video import NARRATION_PAUSE_MARKER
 
 
 class CommandLineTests(unittest.TestCase):
@@ -52,6 +62,60 @@ class CommandLineTests(unittest.TestCase):
         text_to_image.assert_called_once_with("Image text to narrate.", str(image_path))
         create_narrated_video.assert_called_once_with(
             image_path, "Image text to narrate.", video_path
+        )
+
+    def test_narration_leads_with_the_latest_congressional_action(self) -> None:
+        bill = CongressBill(
+            legislation_number="H.R. 42",
+            url="https://example.test/bill",
+            congress="119",
+            title="An Act to Improve Example Programs",
+            sponsor="Example Sponsor",
+            sponsor_party="I",
+            date_of_introduction=date(2026, 1, 3),
+            latest_action="Referred to the House Committee on the Judiciary",
+            latest_action_date=date(2026, 8, 13),
+            latest_summary="Official source text",
+            summary_source="official CRS summary",
+        )
+
+        narration = _narration_copy(bill, "Creates an example program.")
+
+        self.assertTrue(narration.startswith("H.R. 42. Latest action:"))
+        self.assertIn("Referred to the House Committee on the Judiciary", narration)
+        self.assertIn("On August 13, 2026.", narration)
+        self.assertIn(NARRATION_PAUSE_MARKER, narration)
+
+    def test_hashtags_include_document_and_matched_topics(self) -> None:
+        bill = CongressBill(
+            legislation_number="H.R. 42",
+            url="https://example.test/bill",
+            congress="119",
+            title="A Vaccine and Public Health Act",
+            sponsor="Example Sponsor",
+            sponsor_party="I",
+            date_of_introduction=date(2026, 1, 3),
+            latest_action="Referred to committee",
+            latest_action_date=date(2026, 8, 13),
+            latest_summary="Official source text",
+            summary_source="official CRS summary",
+        )
+
+        hashtags = _document_hashtags(bill, "Improves vaccine access and healthcare.")
+
+        self.assertEqual(
+            hashtags,
+            [
+                "#Politics",
+                "#Congress",
+                "#Bill",
+                "#Law",
+                "#Legislation",
+                "#PublicPolicy",
+                "#USPolitics",
+                "#Vaccines",
+                "#Healthcare",
+            ],
         )
 
     @patch("app.summarize_date", return_value=0)

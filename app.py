@@ -34,8 +34,6 @@ closing, Markdown, bullets, numbering, asterisks, hashtags, or quotation marks.
 Output only the summary paragraph.
 """.strip()
 
-title_rubric: str = "%s %s on %s (%s)\n%s\n\n#politics #bill #law #congress #%s"
-title_rubric_short: str = "%s %s on %s (%s)\n#politics #bill #law #congress #%s"
 post_rubric: str = """
 %s %s on %s
 
@@ -53,6 +51,25 @@ Summary:
 SUMMARY_MAX_WORDS = 90
 SUMMARY_MAX_TOKENS = 220
 SOURCE_CHOICES = ("both", "bills", "executive-orders")
+MAX_TOPIC_HASHTAGS = 2
+
+# Match clear subject words in an official title or plain-language summary.
+# Two specific tags add useful context without making a post look like a tag
+# cloud. Keep terms lowercase because the searchable text is case-folded.
+TOPIC_HASHTAGS = (
+    (("vaccine", "vaccination", "immunization"), "#Vaccines"),
+    (("health", "healthcare", "hospital", "medicare", "medicaid"), "#Healthcare"),
+    (("education", "school", "student", "teacher", "college"), "#Education"),
+    (("immigration", "border", "asylum", "visa", "ice "), "#Immigration"),
+    (("veteran", "military", "defense", "armed forces"), "#NationalSecurity"),
+    (("climate", "energy", "environment", "emission", "clean air"), "#ClimatePolicy"),
+    (("tax", "budget", "appropriation", "treasury", "spending"), "#Economy"),
+    (("agriculture", "farm", "rural", "food security"), "#Agriculture"),
+    (("crime", "justice", "police", "court", "prison"), "#CriminalJustice"),
+    (("housing", "homeless", "rent", "mortgage"), "#Housing"),
+    (("cyber", "technology", "artificial intelligence", "internet"), "#Technology"),
+    (("transportation", "highway", "rail", "aviation", "transit"), "#Infrastructure"),
+)
 
 
 def parse_date(value: str) -> date:
@@ -139,19 +156,57 @@ def _write_debug_artifacts(
     return video_path
 
 
+def _document_hashtags(document, summary: str) -> list[str]:
+    """Return a concise, document-specific group of discovery hashtags."""
+    if isinstance(document, CongressBill):
+        hashtags = [
+            "#Politics",
+            "#Congress",
+            "#Bill",
+            "#Law",
+            "#Legislation",
+            "#PublicPolicy",
+            "#USPolitics",
+        ]
+    elif isinstance(document, ExecutiveOrder):
+        hashtags = [
+            "#Politics",
+            "#ExecutiveOrder",
+            "#WhiteHouse",
+            "#FederalRegister",
+            "#Law",
+            "#PublicPolicy",
+            "#USPolitics",
+        ]
+    else:
+        raise TypeError(f"Unsupported document type: {type(document).__name__}")
+
+    searchable_text = f"{document.title} {summary}".casefold()
+    base_hashtag_count = len(hashtags)
+    for terms, hashtag in TOPIC_HASHTAGS:
+        if any(term in searchable_text for term in terms):
+            hashtags.append(hashtag)
+        if len(hashtags) == base_hashtag_count + MAX_TOPIC_HASHTAGS:
+            break
+    return hashtags
+
+
 def _youtube_metadata(document, image_text: str) -> tuple[str, str, list[str]]:
     """Build the YouTube title, description, and tags for a source document."""
     if isinstance(document, CongressBill):
         identifier = document.legislation_number
-        tags = ["congress", "legislation", "politics", "news"]
     elif isinstance(document, ExecutiveOrder):
         identifier = document.executive_order_number
-        tags = ["executive order", "politics", "news"]
     else:
         raise TypeError(f"Unsupported document type: {type(document).__name__}")
 
+    hashtags = _document_hashtags(document, image_text)
+    tags = [hashtag.lstrip("#") for hashtag in hashtags]
     title = f"{identifier}: {document.title}"
-    description = f"{image_text}\n\nOfficial source: {document.url}\n\n#Shorts"
+    description = (
+        f"{image_text}\n\nOfficial source: {document.url}\n\n"
+        f"#Shorts {' '.join(hashtags)}"
+    )
     return title, description, tags
 
 
@@ -179,20 +234,14 @@ def _fetch_documents(target_date: date, source: str) -> tuple[list, list[str]]:
 def _post_copy(document, summary: str) -> tuple[str, str, str]:
     """Build platform and image text appropriate for either document type."""
     if isinstance(document, CongressBill):
-        tweet_text = title_rubric % (
-            document.legislation_number,
-            document.latest_action,
-            document.latest_action_date,
-            document.url,
-            document.title,
-            document.sponsor_party.lower(),
+        hashtags = " ".join(_document_hashtags(document, summary))
+        tweet_text = (
+            f"{document.legislation_number} {document.latest_action} on "
+            f"{document.latest_action_date} ({document.url})\n{document.title}\n\n{hashtags}"
         )
-        tweet_text_short = title_rubric_short % (
-            document.legislation_number,
-            document.latest_action,
-            document.latest_action_date,
-            document.url,
-            document.sponsor_party.lower(),
+        tweet_text_short = (
+            f"{document.legislation_number} {document.latest_action} on "
+            f"{document.latest_action_date} ({document.url})\n\n{hashtags}"
         )
         image_text = post_rubric % (
             document.legislation_number,
@@ -209,14 +258,15 @@ def _post_copy(document, summary: str) -> tuple[str, str, str]:
         return tweet_text, tweet_text_short, image_text
 
     if isinstance(document, ExecutiveOrder):
+        hashtags = " ".join(_document_hashtags(document, summary))
         tweet_text = (
             f"{document.executive_order_number} signed on {document.signing_date} "
             f"({document.url})\n{document.title}\n\n"
-            "#politics #executiveorder #president"
+            f"{hashtags}"
         )
         tweet_text_short = (
             f"{document.executive_order_number} signed on {document.signing_date} "
-            f"({document.url})\n#politics #executiveorder #president"
+            f"({document.url})\n{hashtags}"
         )
         image_text = (
             f"{document.executive_order_number} signed on {document.signing_date}\n\n"
@@ -236,16 +286,24 @@ def _narration_copy(document, summary: str) -> str:
     Visual cards retain a small source attribution, while descriptions retain
     the official URL. Narrating those publishing details makes a Short feel
     slower without helping its viewer understand the action, so the voiceover
-    stays focused on the title and plain-language summary.
+    stays focused on the latest action, title, and plain-language summary.
     """
     if isinstance(document, CongressBill):
-        identifier = document.legislation_number
+        action = document.latest_action.rstrip(". ")
+        action_date = document.latest_action_date.strftime("%B %d, %Y").replace(
+            " 0", " "
+        )
+        introduction = (
+            f"{document.legislation_number}. Latest action: {action}. "
+            f"On {action_date}."
+        )
     elif isinstance(document, ExecutiveOrder):
-        identifier = document.executive_order_number
+        signing_date = document.signing_date.strftime("%B %d, %Y").replace(" 0", " ")
+        introduction = f"{document.executive_order_number}. Signed on {signing_date}."
     else:
         raise TypeError(f"Unsupported document type: {type(document).__name__}")
     title = document.title.rstrip(". ")
-    return f"{identifier}. {title}.{NARRATION_PAUSE_MARKER}{summary}"
+    return f"{introduction} {title}.{NARRATION_PAUSE_MARKER}{summary}"
 
 
 def _document_fields(document) -> tuple[str, str, str]:

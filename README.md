@@ -183,7 +183,3 @@ state which source was used.
 ## Machine Learning
 Summaries are generated with the local Ollama model `qwen3.6:35b`. The model is
 configured with `OLLAMA_MODEL`, and inference is sent to `OLLAMA_BASE_URL`.
-
-## TO DO
- - post to linkedin
- - post to facebook
