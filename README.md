@@ -3,9 +3,14 @@
 One-shot job that summarizes legislation and posts it to social media.
 
 ## Social Media
+
+[@BillSummaries](https://www.youtube.com/@BillSummaries) on youtube
+
 [BANNED](https://www.reddit.com/r/legislation_summary/) on reddit
 
 [@billsummaries](https://twitter.com/billsummaries) on twitter but API access isn't free anymore so not posting here anymore
+
+I tried to make a facebook page for this as well, however facebook has decided that my phone number is not worthy of recieving verification texts, so I can't get a developer account
 
 ## Deployment
 The application generates summaries through a locally deployed Ollama model. It
