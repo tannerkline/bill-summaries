@@ -2,6 +2,7 @@ import requests
 import os
 import logging
 import time
+import json
 from requests_oauthlib import OAuth1
 
 # logging setup
@@ -20,86 +21,126 @@ oauth = OAuth1(
     resource_owner_secret=TWITTER_ACCESS_SECRET
 )
 
+
+def _response_json(response: requests.Response) -> dict:
+    """Return a JSON object when Twitter supplied one, otherwise an empty object."""
+    try:
+        data = response.json()
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _error_details(response: requests.Response) -> str:
+    """Extract useful Twitter error fields without logging request credentials."""
+    response_data = _response_json(response)
+    if response_data:
+        details = {}
+        for field_name in ("title", "detail", "type", "errors"):
+            if field_name in response_data:
+                details[field_name] = response_data[field_name]
+        if details:
+            return json.dumps(details, ensure_ascii=False)[:2_000]
+
+    response_text = getattr(response, "text", "")
+    if isinstance(response_text, str) and response_text.strip():
+        return " ".join(response_text.split())[:1_000]
+    return "Twitter did not provide a readable error body"
+
+
+def _log_api_error(operation: str, response: requests.Response) -> None:
+    """Log response details needed to diagnose non-success Twitter responses."""
+    log.warning(
+        "Twitter %s failed: HTTP %d; response=%s",
+        operation,
+        response.status_code,
+        _error_details(response),
+    )
+
+
+def _is_success(response: requests.Response) -> bool:
+    return 200 <= response.status_code < 300
+
+
+def _is_tweet_too_long(response: requests.Response) -> bool:
+    errors = _response_json(response).get("errors", [])
+    return (
+        isinstance(errors, list)
+        and len(errors) == 1
+        and isinstance(errors[0], dict)
+        and str(errors[0].get("message", "")).startswith("Your Tweet text is too long")
+    )
+
+
+def _retry_rate_limited_request(request, operation: str) -> requests.Response:
+    """Retry a Twitter request after 429 responses, returning its final response."""
+    response = request()
+    retry_count = 0
+    while response.status_code == 429:
+        _log_api_error(operation, response)
+        if retry_count >= 10:
+            log.warning("Twitter %s timed out while waiting for rate limiting", operation)
+            return response
+        retry_count += 1
+        log.info("Twitter %s was rate limited; waiting 30 minutes before retry %d", operation, retry_count)
+        time.sleep(60 * 30)
+        response = request()
+    return response
+
 def create_post(file_path: str, text: str, text_short: str) -> bool:
-    '''
-    Creates full twitter post (media upload and tweet) 
-    with retries and error handling
-    '''
-    success = True
-    resp = upload_media(file_path)
-    if not (200 <= resp.status_code < 300):
-        log.info("Bad status code from media upload: %d", resp.status_code)
-        # handle rate limiting
-        i: int = 0
-        while resp.status_code == 429:
-            if i > 10:
-                log.info("Timed out waiting for rate limiting")
-                success = False
-                break
-            else:
-                i += 1
-            log.info("Got rate limited; waiting 30 minutes and trying again later")
-            time.sleep(60*30)
-            resp = upload_media(file_path)
+    """Upload the image and create a tweet, with safe API-error diagnostics."""
+    resp = _retry_rate_limited_request(
+        lambda: upload_media(file_path), "media upload"
+    )
+    if not _is_success(resp):
+        _log_api_error("media upload", resp)
+        return False
 
-    media_id: str = resp.json().get('media_id_string', '')
+    media_id = _response_json(resp).get("media_id_string", "")
     if not media_id:
-        log.info("No media ID in request. Upload failed")
-        success = False
-    
-    if not success:
-        return success
+        log.warning(
+            "Twitter media upload succeeded but returned no media ID; response=%s",
+            _error_details(resp),
+        )
+        return False
 
-    resp = create_tweet(text, media_id)
-    if not (200 <= resp.status_code < 300):
-        log.info("Bad status code from tweet creation: %d", resp.status_code)
-        
-        # handle rate limiting
-        i: int = 0
-        while resp.status_code == 429:
-            if i > 10:
-                log.info("Timed out waiting for rate limiting")
-                success = False
-                break
-            else:
-                i += 1
-            log.info("Got rate limited; waiting 30 minutes and trying again later")
-            time.sleep(60*30)
-            resp = create_tweet(text, media_id)
+    resp = _retry_rate_limited_request(
+        lambda: create_tweet(text, media_id), "tweet creation"
+    )
+    if _is_success(resp):
+        return True
+    _log_api_error("tweet creation", resp)
 
-        # check if tweet was too long
-        errors: list = resp.json().get('errors', [])
-        if len(errors) == 1 and errors[0].get('message').startswith("Your Tweet text is too long"):
-                log.info("Tweet too long; trying with reduced title")
-                resp = create_tweet(text_short, media_id)
-                if not (200 <= resp.status_code < 300):
-                    # if tweet is still too long, try with no title
-                    errors: list = resp.json().get('errors', [])
-                    if len(errors) == 1 and errors[0].get('message').startswith("Your Tweet text is too long"):
-                        resp = create_tweet("", media_id)
-                        if not (200 <= resp.status_code < 300):
-                            log.info("Failed to create no title tweet", resp.status_code)
-                    else:
-                        log.info("Failed to create short title tweet", resp.status_code)
-                        success = False
+    if not _is_tweet_too_long(resp):
+        return False
 
-        # A non-rate-limit HTTP error (such as 401 or 403) previously fell
-        # through and was reported as a successful post.
-        if not (200 <= resp.status_code < 300):
-            success = False
+    log.info("Tweet text is too long; trying the reduced title")
+    resp = create_tweet(text_short, media_id)
+    if _is_success(resp):
+        return True
+    _log_api_error("tweet creation with reduced title", resp)
 
-    return success
+    if not _is_tweet_too_long(resp):
+        return False
+
+    log.info("Reduced tweet text is too long; trying the image without text")
+    resp = create_tweet("", media_id)
+    if not _is_success(resp):
+        _log_api_error("tweet creation without text", resp)
+        return False
+    return True
 
 
 def upload_media(file_path: str) -> requests.Response:
     ''' uploads media to twitter '''
-    response = requests.post(
-        'https://upload.twitter.com/1.1/media/upload.json?media_category=tweet_image', 
-        auth=oauth,
-        files={
-            'media': open(file_path, 'rb'),
-        }
-    )
+    with open(file_path, 'rb') as media_file:
+        response = requests.post(
+            'https://upload.twitter.com/1.1/media/upload.json?media_category=tweet_image',
+            auth=oauth,
+            files={
+                'media': media_file,
+            }
+        )
     return response
 
 

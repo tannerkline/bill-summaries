@@ -12,11 +12,32 @@ services:
       - CONGRESS_API_KEY=${CONGRESS_API_KEY}
       - CONGRESS_API_TIMEOUT_SECONDS=${CONGRESS_API_TIMEOUT_SECONDS:-30}
       - CONGRESS_BILL_TEXT_MAX_CHARACTERS=${CONGRESS_BILL_TEXT_MAX_CHARACTERS:-100000}
+      # The Federal Register API is public and does not require an API key.
+      - FEDERAL_REGISTER_TIMEOUT_SECONDS=${FEDERAL_REGISTER_TIMEOUT_SECONDS:-30}
+      - EXECUTIVE_ORDER_TEXT_MAX_CHARACTERS=${EXECUTIVE_ORDER_TEXT_MAX_CHARACTERS:-100000}
+      # Piper runs locally in debug mode. The high-quality default voice is
+      # included in the image; set this only after rebuilding with that model.
+      - PIPER_MODEL=${PIPER_MODEL:-en_US-lessac-high}
+      - PIPER_DATA_DIR=${PIPER_DATA_DIR:-/usr/src/app/voices}
+      # YouTube's publisher reads its OAuth token configuration from these
+      # values, like the other social-media publishers.
+      - YOUTUBE_ACCESS_TOKEN=${YOUTUBE_ACCESS_TOKEN:-}
+      - YOUTUBE_CLIENT_ID=${YOUTUBE_CLIENT_ID:-}
+      - YOUTUBE_CLIENT_SECRET=${YOUTUBE_CLIENT_SECRET:-}
+      - YOUTUBE_REFRESH_TOKEN=${YOUTUBE_REFRESH_TOKEN:-}
+      - YOUTUBE_PRIVACY_STATUS=${YOUTUBE_PRIVACY_STATUS:-public}
+      - YOUTUBE_NOTIFY_SUBSCRIBERS=${YOUTUBE_NOTIFY_SUBSCRIBERS:-false}
       # Keep social-media credentials at runtime; do not bake them into the image.
       - TWITTER_API_KEY=${TWITTER_API_KEY}
       - TWITTER_API_KEY_SECRET=${TWITTER_API_KEY_SECRET}
       - TWITTER_ACCESS_TOKEN=${TWITTER_ACCESS_TOKEN}
       - TWITTER_ACCESS_SECRET=${TWITTER_ACCESS_SECRET}
+      - LINKEDIN_ACCESS_TOKEN=${LINKEDIN_ACCESS_TOKEN}
+      - LINKEDIN_ORGANIZATION_URN=${LINKEDIN_ORGANIZATION_URN}
+      - LINKEDIN_API_VERSION=${LINKEDIN_API_VERSION}
+      - FACEBOOK_PAGE_ID=${FACEBOOK_PAGE_ID}
+      - FACEBOOK_PAGE_ACCESS_TOKEN=${FACEBOOK_PAGE_ACCESS_TOKEN}
+      - FACEBOOK_GRAPH_API_VERSION=${FACEBOOK_GRAPH_API_VERSION}
     networks:
       - hermes-net
     volumes:
