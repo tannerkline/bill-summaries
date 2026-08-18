@@ -125,41 +125,6 @@ plain-language summary. It is never posted in debug mode. The default
 speech request leaves the container at runtime. The `output/` directory is
 ignored by Git.
 
-## Uploading YouTube Shorts
-
-The YouTube publisher follows the same pattern as LinkedIn and Facebook:
-it is implemented but disabled by default in `app.py`. It renders the same
-portrait MP4 and uploads it with the YouTube Data API. YouTube classifies square
-or vertical videos no longer than three minutes as Shorts; there is no special
-Shorts API parameter.
-
-Set the same OAuth values you already use to obtain a YouTube API token in
-`.env`. A current `YOUTUBE_ACCESS_TOKEN` works for a manual upload. For a
-scheduled job, use `YOUTUBE_REFRESH_TOKEN` together with the client ID and
-secret so the social publisher refreshes it automatically:
-
-```env
-YOUTUBE_ACCESS_TOKEN=...
-# Recommended for recurring posts:
-YOUTUBE_CLIENT_ID=...
-YOUTUBE_CLIENT_SECRET=...
-YOUTUBE_REFRESH_TOKEN=...
-YOUTUBE_PRIVACY_STATUS=public
-```
-
-Remove the comment markers from the `create_youtube_post(...)` block in
-`app.py` to enable it during ordinary non-debug runs. Uploads default to
-`public`; set `YOUTUBE_PRIVACY_STATUS=private` or `unlisted` when you want to
-review a post before it is visible on the channel.
-
-## Enabling LinkedIn and Facebook
-
-The LinkedIn Organization Page and Facebook Page publishers are implemented
-but disabled by default. After their credentials above are configured, remove
-the comment markers from the corresponding `create_linkedin_post(post_text)`
-or `create_facebook_post(post_text)` block in `app.py`. Both publish the full
-plain-text bill summary; neither uses the generated PNG.
-
 For a daily 9:00 AM run, add this to the crontab of the user that can run
 Docker. The escaped percent sign is required by `crontab`.
 
