@@ -4,13 +4,12 @@ One-shot job that summarizes legislation and posts it to social media.
 
 ## Social Media
 
-[@BillSummaries](https://www.youtube.com/@BillSummaries) on youtube
-
-[BANNED](https://www.reddit.com/r/legislation_summary/) on reddit
-
-[@billsummaries](https://twitter.com/billsummaries) on twitter but API access isn't free anymore so not posting here anymore
-
-I tried to make a facebook page for this as well, however facebook has decided that my phone number is not worthy of recieving verification texts, so I can't get a developer account
+ - [@BillSummaries](https://www.youtube.com/@BillSummaries) on youtube
+ - [BANNED](https://www.reddit.com/r/legislation_summary/) on reddit
+ - [@billsummaries](https://twitter.com/billsummaries) on twitter but API access isn't free anymore so not posting here anymore
+ - I tried to make a facebook page for this as well, however facebook has decided that my phone number is not worthy of recieving verification texts, so I can't get a developer account
+ - I haven't gotten around to hooking it up to linkedin
+ - Tiktok doesn't support fully automated posts like youtube does
 
 ## Deployment
 The application generates summaries through a locally deployed Ollama model. It
@@ -56,6 +55,8 @@ into the application image:
 
 ```env
 CONGRESS_API_KEY=your-key
+# Optional: defaults to the current (119th) Congress. Update in 2027.
+CONGRESS_NUMBER=119
 # Optional: defaults to 30 seconds
 CONGRESS_API_TIMEOUT_SECONDS=30
 # Optional: caps raw bill-text fallback before it is sent to Ollama

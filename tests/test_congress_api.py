@@ -79,6 +79,10 @@ class CongressApiTests(unittest.TestCase):
         self.assertEqual(bill.latest_action, "Passed House")
         self.assertEqual(bill.date_of_introduction, date(2026, 1, 3))
         self.assertEqual(
+            session.get.call_args_list[0].args[0],
+            "https://api.congress.gov/v3/bill/119",
+        )
+        self.assertEqual(
             session.get.call_args_list[0].kwargs["params"],
             {
                 "api_key": "test-api-key",
@@ -87,6 +91,22 @@ class CongressApiTests(unittest.TestCase):
                 "toDateTime": "2026-08-16T00:00:00Z",
                 "limit": 250,
             },
+        )
+
+    @patch.dict(
+        "os.environ",
+        {"CONGRESS_API_KEY": "test-api-key", "CONGRESS_NUMBER": "120"},
+        clear=False,
+    )
+    def test_uses_the_configured_congress_endpoint(self) -> None:
+        session = Mock()
+        session.get.return_value = json_response({"bills": [], "pagination": {}})
+
+        bills = fetch_bills_with_latest_action_on(date(2027, 1, 4), session=session)
+
+        self.assertEqual(bills, [])
+        self.assertEqual(
+            session.get.call_args.args[0], "https://api.congress.gov/v3/bill/120"
         )
 
     @patch.dict("os.environ", {"CONGRESS_API_KEY": "test-api-key"}, clear=False)

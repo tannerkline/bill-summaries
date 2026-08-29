@@ -10,6 +10,8 @@ services:
       - OLLAMA_TIMEOUT_SECONDS=${OLLAMA_TIMEOUT_SECONDS:-600}
       - OLLAMA_THINK=${OLLAMA_THINK:-false}
       - CONGRESS_API_KEY=${CONGRESS_API_KEY}
+      # The current Congress; update this at the start of each new Congress.
+      - CONGRESS_NUMBER=${CONGRESS_NUMBER:-119}
       - CONGRESS_API_TIMEOUT_SECONDS=${CONGRESS_API_TIMEOUT_SECONDS:-30}
       - CONGRESS_BILL_TEXT_MAX_CHARACTERS=${CONGRESS_BILL_TEXT_MAX_CHARACTERS:-100000}
       # The Federal Register API is public and does not require an API key.

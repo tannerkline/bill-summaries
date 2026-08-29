@@ -17,6 +17,7 @@ API_ROOT = "https://api.congress.gov/v3"
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_PAGE_SIZE = 250
 DEFAULT_BILL_TEXT_MAX_CHARACTERS = 100_000
+DEFAULT_CONGRESS_NUMBER = 119
 
 _BILL_LABELS = {
     "HR": "H.R.",
@@ -80,7 +81,7 @@ class CongressBill:
     summary_source: str
 
 
-def _configuration() -> tuple[str, int, int]:
+def _configuration() -> tuple[str, int, int, int]:
     api_key = os.getenv("CONGRESS_API_KEY", "").strip()
     if not api_key:
         raise CongressApiError("CONGRESS_API_KEY is not configured")
@@ -112,7 +113,17 @@ def _configuration() -> tuple[str, int, int]:
     if bill_text_max_characters <= 0:
         raise CongressApiError("CONGRESS_BILL_TEXT_MAX_CHARACTERS must be positive")
 
-    return api_key, timeout_seconds, bill_text_max_characters
+    try:
+        congress_number = int(
+            os.getenv("CONGRESS_NUMBER", str(DEFAULT_CONGRESS_NUMBER))
+        )
+    except ValueError as error:
+        raise CongressApiError("CONGRESS_NUMBER must be a whole number") from error
+
+    if congress_number <= 0:
+        raise CongressApiError("CONGRESS_NUMBER must be positive")
+
+    return api_key, timeout_seconds, bill_text_max_characters, congress_number
 
 
 def _request_json(
@@ -356,11 +367,14 @@ def fetch_bills_with_latest_action_on(
     action date. We therefore request the target date and the following day,
     then filter records using their actual ``latestAction.actionDate``.
     """
-    api_key, timeout_seconds, bill_text_max_characters = _configuration()
+    api_key, timeout_seconds, bill_text_max_characters, congress_number = _configuration()
     client = session or requests.Session()
     start = f"{target_date.isoformat()}T00:00:00Z"
     end = f"{(target_date + timedelta(days=2)).isoformat()}T00:00:00Z"
-    page_url = f"{API_ROOT}/bill"
+    # The unscoped bill endpoint currently returns HTTP 500 for some valid
+    # date-filtered requests. Restricting this daily scan to the active
+    # Congress avoids that upstream failure and contains all current actions.
+    page_url = f"{API_ROOT}/bill/{congress_number}"
     page_params: Optional[dict[str, Any]] = {
         "fromDateTime": start,
         "toDateTime": end,
