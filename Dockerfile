@@ -2,10 +2,10 @@ FROM python:3.12-slim
 
 WORKDIR /usr/src/app
 
-# The debug video artifact uses FFmpeg and Piper's neural TTS model. Piper is
+# Narrated videos use FFmpeg and Kokoro's neural TTS model. Kokoro is
 # fully local once the model has been downloaded during this image build.
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends ffmpeg
+    && apt-get install --yes --no-install-recommends ffmpeg libsndfile1
 
 # install pip libaries
 RUN python3 -m venv /opt/app/venv
@@ -14,16 +14,13 @@ RUN . /opt/app/venv/bin/activate \
     && pip install --no-cache-dir \
         beautifulsoup4 pillow \
         google-api-python-client \
-        piper-tts==1.6.0 \
+        kokoro-onnx==0.6.1 soundfile==0.13.1 \
         requests requests_oauthlib
 
-# The ONNX model and its JSON configuration are kept in the image rather than
-# fetched during a debug run. Lessac high supplies a higher-fidelity American
-# voice for narration. Change PIPER_MODEL and add its voice files to use a
-# different Piper voice.
-RUN /opt/app/venv/bin/python -m piper.download_voices \
-        --data-dir /usr/src/app/voices \
-        en_US-lessac-high
+# Bundle the full-quality model and all voices for offline CPU inference.
+RUN mkdir -p /usr/src/app/voices
+ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/kokoro-v1.0.onnx /usr/src/app/voices/kokoro-v1.0.onnx
+ADD https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.0.bin /usr/src/app/voices/voices-v1.0.bin
 
 COPY app.py /usr/src/app
 COPY util /usr/src/app/util

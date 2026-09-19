@@ -17,10 +17,10 @@ services:
       # The Federal Register API is public and does not require an API key.
       - FEDERAL_REGISTER_TIMEOUT_SECONDS=${FEDERAL_REGISTER_TIMEOUT_SECONDS:-30}
       - EXECUTIVE_ORDER_TEXT_MAX_CHARACTERS=${EXECUTIVE_ORDER_TEXT_MAX_CHARACTERS:-100000}
-      # Piper runs locally in debug mode. The high-quality default voice is
-      # included in the image; set this only after rebuilding with that model.
-      - PIPER_MODEL=${PIPER_MODEL:-en_US-lessac-high}
-      - PIPER_DATA_DIR=${PIPER_DATA_DIR:-/usr/src/app/voices}
+      # Kokoro runs locally for all narration; model and voices are in the image.
+      - KOKORO_VOICE=${KOKORO_VOICE:-af_heart}
+      - KOKORO_SPEED=${KOKORO_SPEED:-1.0}
+      - KOKORO_DATA_DIR=${KOKORO_DATA_DIR:-/usr/src/app/voices}
       # YouTube's publisher reads its OAuth token configuration from these
       # values, like the other social-media publishers.
       - YOUTUBE_ACCESS_TOKEN=${YOUTUBE_ACCESS_TOKEN:-}

@@ -17,6 +17,7 @@ from app import (
 )
 from util.congress_api import CongressBill
 from util.debug_video import NARRATION_PAUSE_MARKER
+from util.federal_register import ExecutiveOrder
 
 
 class CommandLineTests(unittest.TestCase):
@@ -161,6 +162,67 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(failures, [])
         fetch_bills.assert_called_once_with(date(2026, 8, 14))
         fetch_executive_orders.assert_called_once_with(date(2026, 8, 14))
+
+
+class TopicHashtagTests(unittest.TestCase):
+    def bill(self, title: str) -> CongressBill:
+        return CongressBill(
+            legislation_number="H.R. 42", url="https://example.test/bill",
+            congress="119", title=title, sponsor="Example Sponsor", sponsor_party="I",
+            date_of_introduction=date(2026, 1, 3), latest_action="Referred to committee",
+            latest_action_date=date(2026, 8, 13), latest_summary="Official source text",
+            summary_source="official CRS summary",
+        )
+
+    def test_covers_new_policy_areas(self) -> None:
+        cases = [
+            ("Credit Union Investment Authority Act", "Allows investments in corporate debt and asset-backed securities.", ["#Banking", "#FinancialMarkets"]),
+            ("Veterans Benefits Act", "Improves healthcare for veterans.", ["#Veterans", "#Healthcare"]),
+            ("Student Loan Relief Act", "Reduces student debt.", ["#HigherEducation", "#Education"]),
+            ("Digital Privacy Act", "Protects personal data from surveillance.", ["#DataPrivacy"]),
+            ("Disaster Recovery Act", "Funds FEMA hurricane recovery.", ["#DisasterRelief"]),
+            ("Tribal Services Act", "Supports tribal governments.", ["#TribalAffairs"]),
+            ("Postal Facility Naming Act", "Renames a post office.", ["#PostalService"]),
+            ("Trade Agreement Act", "Changes tariffs on imports.", ["#TradePolicy"]),
+            ("Community Support Act", "Expands child care and paid family leave.", ["#Childcare", "#PaidLeave"]),
+            ("Election Administration Act", "Updates campaign finance rules.", ["#Elections"]),
+        ]
+        for title, summary, expected in cases:
+            with self.subTest(title=title):
+                self.assertEqual(_document_hashtags(self.bill(title), summary)[7:], expected)
+
+    def test_does_not_match_parts_of_unrelated_words(self) -> None:
+        tags = _document_hashtags(
+            self.bill("Notice for Parents Act"),
+            "An office updates its guidance on unfair treatment and taxi licenses.",
+        )
+        self.assertEqual(len(tags), 7)
+
+    def test_handles_case_hyphens_and_plural_terms(self) -> None:
+        tags = _document_hashtags(
+            self.bill("MENTAL–HEALTH Services Act"),
+            "Supports mental-health care at schools for students and teachers.",
+        )
+        self.assertEqual(tags[7:], ["#MentalHealth", "#Healthcare"])
+
+    def test_specific_topics_take_priority_and_keep_two_tag_limit(self) -> None:
+        tags = _document_hashtags(
+            self.bill("Technology and Infrastructure Act"),
+            "Funds artificial intelligence research, cybersecurity, and broadband.",
+        )
+        self.assertEqual(tags[7:], ["#ArtificialIntelligence", "#Cybersecurity"])
+        self.assertEqual(len(tags), len(set(tags)))
+
+    def test_executive_orders_use_expanded_topics(self) -> None:
+        order = ExecutiveOrder(
+            executive_order_number="Executive Order 12345", document_number="2026-12345",
+            url="https://example.test/order", title="Securing Federal Networks",
+            signing_date=date(2026, 8, 13), publication_date=date(2026, 8, 14),
+            text="Source text", text_source="official full text",
+        )
+        tags = _document_hashtags(order, "Improves cybersecurity and protects personal data.")
+        self.assertIn("#ExecutiveOrder", tags)
+        self.assertEqual(tags[7:], ["#Cybersecurity", "#DataPrivacy"])
 
 
 if __name__ == "__main__":

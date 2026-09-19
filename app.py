@@ -51,24 +51,118 @@ Summary:
 SUMMARY_MAX_WORDS = 90
 SUMMARY_MAX_TOKENS = 220
 SOURCE_CHOICES = ("both", "bills", "executive-orders")
-MAX_TOPIC_HASHTAGS = 2
+MAX_TOPIC_HASHTAGS = 5
 
-# Match clear subject words in an official title or plain-language summary.
-# Two specific tags add useful context without making a post look like a tag
-# cloud. Keep terms lowercase because the searchable text is case-folded.
+# Match subject words in the official title or plain-language summary.
+# Specific topics precede broad fallbacks; each post gets at most two topic tags.
+# Keep terms lowercase and list inflections explicitly to avoid substring matches.
 TOPIC_HASHTAGS = (
-    (("vaccine", "vaccination", "immunization"), "#Vaccines"),
-    (("health", "healthcare", "hospital", "medicare", "medicaid"), "#Healthcare"),
-    (("education", "school", "student", "teacher", "college"), "#Education"),
-    (("immigration", "border", "asylum", "visa", "ice "), "#Immigration"),
-    (("veteran", "military", "defense", "armed forces"), "#NationalSecurity"),
-    (("climate", "energy", "environment", "emission", "clean air"), "#ClimatePolicy"),
-    (("tax", "budget", "appropriation", "treasury", "spending"), "#Economy"),
-    (("agriculture", "farm", "rural", "food security"), "#Agriculture"),
-    (("crime", "justice", "police", "court", "prison"), "#CriminalJustice"),
-    (("housing", "homeless", "rent", "mortgage"), "#Housing"),
-    (("cyber", "technology", "artificial intelligence", "internet"), "#Technology"),
-    (("transportation", "highway", "rail", "aviation", "transit"), "#Infrastructure"),
+    # Health and family policy.
+    (("vaccine", "vaccines", "vaccination", "vaccinations", "immunization", "immunizations"), "#Vaccines"),
+    (("mental health", "behavioral health", "suicide prevention", "psychiatric"), "#MentalHealth"),
+    (("medicare", "medicaid", "chip coverage", "children's health insurance"), "#MedicareMedicaid"),
+    (("prescription drugs", "drug pricing", "drug prices", "pharmaceutical", "pharmaceuticals", "insulin"), "#PrescriptionDrugs"),
+    (("opioid", "opioids", "fentanyl"), "#OpioidCrisis"),
+    (("overdose", "overdoses", "substance use", "addiction treatment", "addiction recovery"), "#AddictionRecovery"),
+    (("maternal health", "pregnancy", "pregnant", "postpartum", "prenatal"), "#MaternalHealth"),
+    (("reproductive health", "reproductive rights", "abortion", "contraception", "contraceptives", "ivf", "in vitro fertilization"), "#ReproductiveHealth"),
+    (("child care", "childcare", "daycare", "day care", "early childhood", "head start"), "#Childcare"),
+    (("child welfare", "foster care", "child abuse", "child protection", "adoption", "adoptions"), "#ChildWelfare"),
+    (("disability", "disabilities", "accessibility", "disabled", "special education"), "#DisabilityRights"),
+    (("social security", "retirement benefits", "pension", "pensions", "retirement savings"), "#Retirement"),
+    (("elder care", "elder abuse", "aging adults", "older adults", "nursing home", "nursing homes", "long term care"), "#SeniorCare"),
+    (("food assistance", "nutrition assistance", "food stamps", "school meals", "school lunches", "wic benefits", "snap benefits", "food insecurity", "hunger"), "#FoodAssistance"),
+    # Education, work, and business.
+    (("student loan", "student loans", "student debt", "college tuition", "pell grant", "pell grants", "higher education"), "#HigherEducation"),
+    (("vocational", "apprenticeship", "apprenticeships", "job training", "workforce development", "career training"), "#WorkforceDevelopment"),
+    (("minimum wage", "wages", "overtime", "collective bargaining", "labor union", "labor unions", "workers' rights", "worker protections", "workplace safety"), "#WorkersRights"),
+    (("paid leave", "family leave", "medical leave", "parental leave", "sick leave"), "#PaidLeave"),
+    (("small business", "small businesses", "entrepreneur", "entrepreneurs", "entrepreneurship", "small business administration"), "#SmallBusiness"),
+    (("antitrust", "monopoly", "monopolies", "anticompetitive", "competition law", "price fixing"), "#Antitrust"),
+    (("consumer protection", "consumer protections", "consumer fraud", "scams", "junk fees", "identity theft", "deceptive practices"), "#ConsumerProtection"),
+    # Money, taxes, and housing.
+    (("bank", "banks", "banking", "credit union", "credit unions", "financial institution", "financial institutions", "deposit insurance", "lending"), "#Banking"),
+    (("securities", "capital markets", "stock market", "investment adviser", "investment advisers", "investor protection", "asset backed"), "#FinancialMarkets"),
+    (("cryptocurrency", "cryptocurrencies", "crypto", "digital assets", "stablecoin", "stablecoins", "blockchain"), "#CryptoPolicy"),
+    (("tax", "taxes", "taxation", "taxpayer", "taxpayers", "tax credit", "tax credits", "internal revenue"), "#TaxPolicy"),
+    (("appropriation", "appropriations", "federal budget", "government spending", "debt ceiling", "national debt", "budget deficit", "budget deficits"), "#FederalBudget"),
+    (("affordable housing", "public housing", "housing voucher", "housing vouchers", "homeless", "homelessness", "section 8"), "#AffordableHousing"),
+    (("mortgage", "mortgages", "homebuyer", "homebuyers", "homeownership", "foreclosure", "foreclosures"), "#Homeownership"),
+    # Technology and research.
+    (("artificial intelligence", "machine learning", "generative ai", "ai model", "ai models", "deepfake", "deepfakes"), "#ArtificialIntelligence"),
+    (("cybersecurity", "cyber security", "cyberattack", "cyberattacks", "ransomware", "data breach", "data breaches"), "#Cybersecurity"),
+    (("data privacy", "personal data", "personal information", "data protection", "biometric", "biometrics", "surveillance"), "#DataPrivacy"),
+    (("broadband", "internet access", "rural internet", "telecommunications", "spectrum auction", "spectrum auctions"), "#Broadband"),
+    (("semiconductor", "semiconductors", "microchip", "microchips", "chip manufacturing"), "#Semiconductors"),
+    (("space exploration", "spaceflight", "nasa", "satellite", "satellites", "commercial space", "space station"), "#SpacePolicy"),
+    (("scientific research", "national science foundation", "research funding", "national laboratory", "national laboratories", "quantum"), "#SciencePolicy"),
+    # Energy, natural resources, and disasters.
+    (("renewable energy", "solar energy", "solar power", "wind energy", "wind power", "clean energy", "geothermal"), "#CleanEnergy"),
+    (("nuclear energy", "nuclear power", "nuclear reactor", "nuclear reactors", "nuclear waste"), "#NuclearEnergy"),
+    (("oil", "natural gas", "petroleum", "pipeline", "pipelines", "drilling", "coal"), "#EnergyPolicy"),
+    (("electric grid", "power grid", "electricity", "transmission lines", "energy storage", "utility rates"), "#ElectricGrid"),
+    (("drinking water", "clean water", "water quality", "wastewater", "water infrastructure", "water supply", "water conservation", "pfas"), "#WaterPolicy"),
+    (("wildfire", "wildfires", "forest fire", "forest fires", "forest management", "forestry"), "#Forestry"),
+    (("disaster relief", "disaster recovery", "disaster preparedness", "fema", "flood", "floods", "flooding", "hurricane", "hurricanes", "earthquake", "earthquakes"), "#DisasterRelief"),
+    (("national park", "national parks", "public lands", "wildlife", "endangered species", "habitat", "habitats", "biodiversity"), "#Conservation"),
+    (("animal welfare", "animal cruelty", "animal testing", "animal protection"), "#AnimalWelfare"),
+    # Transportation, farming, and manufacturing.
+    (("aviation", "airline", "airlines", "airport", "airports", "air traffic", "faa"), "#Aviation"),
+    (("rail", "railroad", "railroads", "railway", "railways", "amtrak", "passenger rail", "freight rail"), "#RailPolicy"),
+    (("public transit", "public transportation", "bus service", "bus services", "mass transit"), "#PublicTransit"),
+    (("road safety", "traffic safety", "vehicle safety", "drunk driving", "impaired driving", "seat belt", "seat belts"), "#RoadSafety"),
+    (("maritime", "shipping", "seaport", "seaports", "port infrastructure", "merchant marine", "shipbuilding"), "#MaritimePolicy"),
+    (("agriculture", "agricultural", "farm", "farms", "farmer", "farmers", "farming", "livestock", "crop", "crops", "crop insurance"), "#Agriculture"),
+    (("food safety", "food labeling", "foodborne", "meat inspection", "food inspection"), "#FoodSafety"),
+    (("rural development", "rural communities", "rural economy", "rural infrastructure"), "#RuralDevelopment"),
+    (("manufacturing", "manufacturer", "manufacturers", "supply chain", "supply chains", "domestic production", "made in america"), "#Manufacturing"),
+    # Defense, foreign affairs, and migration.
+    (("veteran", "veterans", "veterans affairs", "veterans benefits", "gi bill", "service connected"), "#Veterans"),
+    (("military", "defense", "armed forces", "servicemember", "servicemembers", "service members", "national guard", "pentagon", "military readiness"), "#NationalSecurity"),
+    (("foreign aid", "foreign assistance", "humanitarian aid", "humanitarian assistance", "international development", "usaid"), "#ForeignAid"),
+    (("sanction", "sanctions", "export controls", "asset freeze", "asset freezes"), "#Sanctions"),
+    (("tariff", "tariffs", "trade agreement", "trade agreements", "international trade", "imports", "exports", "customs duties"), "#TradePolicy"),
+    (("diplomacy", "diplomatic", "foreign relations", "foreign policy", "embassy", "embassies", "nato", "treaty", "treaties"), "#ForeignPolicy"),
+    (("immigration", "immigrant", "immigrants", "asylum", "visa", "visas", "deportation", "deportations", "naturalization", "border security", "border patrol", "ice detention", "ice agents", "immigration and customs enforcement"), "#Immigration"),
+    (("refugee", "refugees", "resettlement", "displaced persons"), "#Refugees"),
+    # Rights, justice, and government.
+    (("voting rights", "voter registration", "ballot access", "voter suppression", "suffrage"), "#VotingRights"),
+    (("voting", "voter", "voters", "election", "elections", "ballot", "ballots", "redistricting", "campaign finance"), "#Elections"),
+    (("civil rights", "discrimination", "equal protection", "equal rights", "racial equality", "religious freedom", "free speech"), "#CivilRights"),
+    (("tribal", "tribes", "tribe", "native american", "native americans", "alaska native", "alaska natives", "indian affairs", "indian health service"), "#TribalAffairs"),
+    (("firearm", "firearms", "gun", "guns", "gun violence", "second amendment", "ammunition"), "#GunPolicy"),
+    (("human trafficking", "sex trafficking", "forced labor", "trafficking victims"), "#HumanTrafficking"),
+    (("domestic violence", "sexual assault", "stalking", "victim services", "victims of crime"), "#VictimSupport"),
+    (("sentencing", "prison", "prisons", "incarceration", "parole", "probation", "reentry", "expungement"), "#JusticeReform"),
+    (("police", "policing", "law enforcement", "law enforcement officers", "body cameras"), "#LawEnforcement"),
+    (("cannabis", "marijuana", "hemp"), "#CannabisPolicy"),
+    (("government transparency", "public records", "freedom of information", "foia", "whistleblower", "whistleblowers", "inspector general", "government ethics", "corruption"), "#GovernmentAccountability"),
+    (("federal employee", "federal employees", "federal workforce", "civil service", "government employees"), "#FederalWorkforce"),
+    (("postal service", "post office", "post offices", "usps", "mail delivery", "postal facility"), "#PostalService"),
+    # Broad fallbacks follow the more specific subjects above.
+    (("health", "healthcare", "health care", "hospital", "hospitals", "patient", "patients", "medical care", "nurse", "nurses", "physician", "physicians"), "#Healthcare"),
+    (("education", "school", "schools", "student", "students", "teacher", "teachers", "college", "colleges", "university", "universities"), "#Education"),
+    (("climate", "emission", "emissions", "greenhouse gas", "greenhouse gases", "carbon dioxide", "global warming"), "#ClimatePolicy"),
+    (("environment", "environmental", "pollution", "clean air", "air quality", "toxic substances", "hazardous waste"), "#Environment"),
+    (("energy", "fuel", "fuels", "electric vehicle", "electric vehicles"), "#Energy"),
+    (("economy", "economic", "inflation", "recession", "unemployment", "treasury", "federal reserve"), "#Economy"),
+    (("crime", "crimes", "criminal", "criminal justice", "court", "courts", "judicial", "judiciary"), "#CriminalJustice"),
+    (("housing", "rent", "rents", "rental", "rentals", "tenant", "tenants", "landlord", "landlords", "zoning"), "#Housing"),
+    (("technology", "technologies", "internet", "software", "digital infrastructure"), "#Technology"),
+    (("infrastructure", "transportation", "transit", "bridge", "bridges", "road", "roads", "highway", "highways", "trucking", "motor vehicle", "motor vehicles"), "#Infrastructure"),
+)
+
+# Compile once; spaces in phrases also accept hyphens and line breaks.
+_TOPIC_PATTERNS = tuple(
+    (
+        re.compile(
+            r"(?<!\w)(?:"
+            + "|".join(re.escape(term).replace(r"\ ", r"[\s\-\u2010-\u2015]+") for term in terms)
+            + r")(?!\w)"
+        ),
+        hashtag,
+    )
+    for terms, hashtag in TOPIC_HASHTAGS
 )
 
 
@@ -183,8 +277,8 @@ def _document_hashtags(document, summary: str) -> list[str]:
 
     searchable_text = f"{document.title} {summary}".casefold()
     base_hashtag_count = len(hashtags)
-    for terms, hashtag in TOPIC_HASHTAGS:
-        if any(term in searchable_text for term in terms):
+    for pattern, hashtag in _TOPIC_PATTERNS:
+        if pattern.search(searchable_text):
             hashtags.append(hashtag)
         if len(hashtags) == base_hashtag_count + MAX_TOPIC_HASHTAGS:
             break

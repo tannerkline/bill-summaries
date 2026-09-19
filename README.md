@@ -4,12 +4,12 @@ One-shot job that summarizes legislation and posts it to social media.
 
 ## Social Media
 
- - [@BillSummaries](https://www.youtube.com/@BillSummaries) on youtube
- - [BANNED](https://www.reddit.com/r/legislation_summary/) on reddit
- - [@billsummaries](https://twitter.com/billsummaries) on twitter but API access isn't free anymore so not posting here anymore
- - I tried to make a facebook page for this as well, however facebook has decided that my phone number is not worthy of recieving verification texts, so I can't get a developer account
- - I haven't gotten around to hooking it up to linkedin
- - Tiktok doesn't support fully automated posts like youtube does
+ - [@BillSummaries](https://www.youtube.com/@BillSummaries) on YouTube
+ - [banned](https://www.reddit.com/r/legislation_summary/) on Reddit
+ - [@billsummaries](https://twitter.com/billsummaries) on Twitter but API access isn't free anymore so not currently posting here
+ - I tried to make a facebook page for this as well, however facebook has decided that my phone number is not worthy of recieving verification texts, so I can't create a developer account
+ - I haven't gotten around to hooking it up to LinkedIn
+ - TikTok doesn't support fully automated posts like youtube does
 
 ## Deployment
 The application generates summaries through a locally deployed Ollama model. It
@@ -120,11 +120,39 @@ docker compose run --rm -T app --date 2026-08-14 --debug
 The run saves artifacts beneath `output/debug/2026-08-14/` on the host: one
 PNG, narrated MP4, model summary, exact tweet text, and image text per document.
 Each PNG is a 1080×1920 Bill Summaries card, and its MP4 adds a subtle slow
-push-in while an offline Piper neural voice reads the document title and
+push-in while an offline Kokoro neural voice reads the document title and
 plain-language summary. It is never posted in debug mode. The default
-`en_US-lessac-high` voice model is downloaded during the image build, so no
-speech request leaves the container at runtime. The `output/` directory is
+`af_heart` American English voice and the full-quality Kokoro model are downloaded
+during the image build, so no speech request leaves the container at runtime.
+Narration runs on CPU with no API key or per-video fees, in both debug mode and
+YouTube publishing. The `output/` directory is
 ignored by Git.
+
+After updating from Piper, rebuild with `docker compose build app`.
+Set `KOKORO_VOICE` in `.env` to choose another bundled American English voice,
+such as `af_bella` or `am_michael`. Set `KOKORO_SPEED` to a number from `0.5` to
+`2.0` (default `1.0`; lower is slower). Voice and speed changes take effect on
+the next `docker compose run` without rebuilding. The existing one-second pause
+between the introduction and summary is preserved.
+For speech, numbered references such as `Calendar No. 629` are expanded to
+`Calendar number 629`; displayed text keeps its original wording.
+Bill and resolution prefixes before a number are also expanded for narration:
+
+| Prefix | Spoken wording |
+| --- | --- |
+| `H.R.` / `S.` | House bill / Senate bill |
+| `H.Res.` / `S.Res.` | House resolution / Senate resolution |
+| `H.J.Res.` / `S.J.Res.` | House joint resolution / Senate joint resolution |
+| `H.Con.Res.` / `S.Con.Res.` | House concurrent resolution / Senate concurrent resolution |
+
+These also accept variations in capitalization, spacing, and periods, such as
+`H. R. 42` and `HR42`. Rebuild the image after pronunciation code changes.
+
+See the [Kokoro voice list](https://huggingface.co/hexgrad/Kokoro-82M/blob/main/VOICES.md)
+for voice options. Local runs outside Docker also need `kokoro-onnx==0.6.1`,
+`soundfile==0.13.1`, FFmpeg, and the `kokoro-v1.0.onnx` and `voices-v1.0.bin`
+files from the [Kokoro ONNX model release](https://github.com/thewh1teagle/kokoro-onnx/releases/tag/model-files-v1.1).
+Point `KOKORO_DATA_DIR` at the directory containing those files.
 
 For a daily 9:00 AM run, add this to the crontab of the user that can run
 Docker. The escaped percent sign is required by `crontab`.
@@ -137,7 +165,18 @@ If your account requires `sudo docker`, install that entry in root's crontab
 with `sudo crontab -e`; do not rely on an interactive `sudo` password prompt
 from cron.
 
+## Topic Hashtags
+
+Posts choose up to two topic hashtags from `TOPIC_HASHTAGS` in `app.py`, matching
+the document title and summary. Topics cover health, education, work, finance,
+housing, technology, energy, transportation, agriculture, defense, foreign
+affairs, civil rights, and government services. Specific topics take priority
+over broad categories. Matching respects word boundaries and accepts hyphenated
+phrases, so unrelated words such as "parents" do not trigger a rent/housing tag.
+The same selection supplies YouTube description hashtags and video tags.
+
 ## Data Sources
+
 Bill data comes from the authenticated [Congress.gov API](https://api.congress.gov/),
 rather than browser automation. The application prefers the most recent
 official CRS summary; when none exists, it summarizes the latest available

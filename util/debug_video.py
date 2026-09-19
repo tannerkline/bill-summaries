@@ -1,9 +1,11 @@
 """Create narrated vertical videos from the generated social image."""
 
+from functools import lru_cache
+import math
 import os
 from pathlib import Path
+import re
 import subprocess
-import sys
 import tempfile
 
 
@@ -11,11 +13,33 @@ class DebugVideoError(RuntimeError):
     """Raised when local narration or video rendering fails."""
 
 
-PIPER_MODEL = os.environ.get("PIPER_MODEL", "en_US-lessac-high")
-PIPER_DATA_DIR = os.environ.get("PIPER_DATA_DIR", "/usr/src/app/voices")
-# The marker is never sent to Piper. It lets the application ask for a precise,
+KOKORO_DATA_DIR = os.environ.get("KOKORO_DATA_DIR", "/usr/src/app/voices")
+KOKORO_VOICE = os.environ.get("KOKORO_VOICE", "af_heart")
+KOKORO_SPEED = os.environ.get("KOKORO_SPEED", "1.0")
+# The marker is never sent to Kokoro. It lets the application ask for a precise,
 # natural beat between an introductory title and the summary.
 NARRATION_PAUSE_MARKER = "\n[[ONE_SECOND_PAUSE]]\n"
+
+
+def _spoken_text(text: str) -> str:
+    """Expand numbered legislative references without changing published copy."""
+    prefixes = (
+        (r"H\.?\s*Con\.?\s*Res\.?", "House concurrent resolution"),
+        (r"S\.?\s*Con\.?\s*Res\.?", "Senate concurrent resolution"),
+        (r"H\.?\s*J\.?\s*Res\.?", "House joint resolution"),
+        (r"S\.?\s*J\.?\s*Res\.?", "Senate joint resolution"),
+        (r"H\.?\s*Res\.?", "House resolution"),
+        (r"S\.?\s*Res\.?", "Senate resolution"),
+        (r"H\.?\s*R\.?", "House bill"),
+        (r"S\.?", "Senate bill"),
+    )
+    for prefix, spoken in prefixes:
+        # Permit compact/spaced citations, but not a suffix of e.g. U.S. 42.
+        text = re.sub(
+            rf"(?<![\w.]){prefix}\s*(?=\d)", f"{spoken} ", text,
+            flags=re.IGNORECASE,
+        )
+    return re.sub(r"\bNo\.\s*(?=\d)", "number ", text, flags=re.IGNORECASE)
 
 
 def _error_text(result: subprocess.CompletedProcess) -> str:
@@ -43,10 +67,12 @@ def _run(command: list[str]) -> subprocess.CompletedProcess:
     return result
 
 
-def _validate_wav(audio_path: Path, speech_result: subprocess.CompletedProcess) -> None:
-    """Ensure Piper or FFmpeg produced a readable WAV before video rendering."""
+def _validate_wav(
+    audio_path: Path, speech_result: subprocess.CompletedProcess | None = None
+) -> None:
+    """Ensure Kokoro or FFmpeg produced a readable WAV before video rendering."""
     if not audio_path.is_file() or audio_path.stat().st_size == 0:
-        details = _error_text(speech_result)
+        details = _error_text(speech_result) if speech_result is not None else ""
         raise DebugVideoError(
             "speech synthesis completed without creating a WAV file"
             f"{f': {details}' if details else ''}"
@@ -56,24 +82,47 @@ def _validate_wav(audio_path: Path, speech_result: subprocess.CompletedProcess) 
             raise DebugVideoError("speech synthesis created an invalid WAV file")
 
 
+@lru_cache(maxsize=1)
+def _kokoro():
+    """Load local model files once, only when narration is requested."""
+    from kokoro_onnx import Kokoro
+
+    directory = Path(KOKORO_DATA_DIR)
+    model = directory / "kokoro-v1.0.onnx"
+    voices = directory / "voices-v1.0.bin"
+    if not model.is_file() or not voices.is_file():
+        raise DebugVideoError(
+            f"Kokoro model files are missing from {directory}; rebuild the Docker image"
+        )
+    return Kokoro(str(model), str(voices))
+
+
 def _synthesize_speech(text: str, audio_path: Path) -> None:
-    """Write a Piper WAV for one spoken segment."""
-    speech_result = _run(
-        [
-            sys.executable,
-            "-m",
-            "piper",
-            "--data-dir",
-            PIPER_DATA_DIR,
-            "-m",
-            PIPER_MODEL,
-            "-f",
-            str(audio_path),
-            "--",
-            text,
-        ]
-    )
-    _validate_wav(audio_path, speech_result)
+    """Write one spoken segment using local Kokoro inference."""
+    try:
+        speed = float(KOKORO_SPEED)
+        if not math.isfinite(speed) or not 0.5 <= speed <= 2.0:
+            raise ValueError
+    except (TypeError, ValueError) as error:
+        raise DebugVideoError("KOKORO_SPEED must be a number between 0.5 and 2.0") from error
+
+    try:
+        import soundfile
+
+        engine = _kokoro()
+        if KOKORO_VOICE not in engine.get_voices():
+            raise DebugVideoError(f"Unknown KOKORO_VOICE: {KOKORO_VOICE}")
+        samples, sample_rate = engine.create(
+            _spoken_text(text), voice=KOKORO_VOICE, speed=speed, lang="en-us"
+        )
+        if len(samples) == 0:
+            raise DebugVideoError("Kokoro returned empty audio")
+        soundfile.write(str(audio_path), samples, sample_rate, subtype="PCM_16")
+    except DebugVideoError:
+        raise
+    except Exception as error:
+        raise DebugVideoError(f"Kokoro speech synthesis failed: {error}") from error
+    _validate_wav(audio_path)
 
 
 def _synthesize_narration(narration: str, audio_path: Path, temp_directory: Path) -> None:
@@ -126,7 +175,7 @@ def create_narrated_video(image_path: Path, narration: str, video_path: Path) ->
 
     The visual treatment uses a slow, centered push-in rather than a frozen
     frame. It makes the static card feel intentional in a Shorts feed without
-    distracting from the narration or relying on a cloud video service. Piper
+    distracting from the narration or relying on a cloud video service. Kokoro
     and FFmpeg are both installed in the application image. The temporary WAV
     is deliberately kept outside the debug output directory so the review
     folder contains only the requested final artifacts.
@@ -137,7 +186,7 @@ def create_narrated_video(image_path: Path, narration: str, video_path: Path) ->
     with tempfile.TemporaryDirectory(prefix="bill-summary-video-") as temp_directory:
         temporary_path = Path(temp_directory)
         audio_path = temporary_path / "narration.wav"
-        # Piper is a local neural voice. Its model is fetched once when the
+        # Kokoro is a local neural voice. Its model is fetched once when the
         # container image is built, so debug runs make no external TTS request.
         _synthesize_narration(narration, audio_path, temporary_path)
 
