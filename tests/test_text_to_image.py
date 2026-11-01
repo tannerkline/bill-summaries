@@ -2,9 +2,11 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageColor
 
 from util.text_to_image import (
+    GOLD,
+    PAPER_MUTED,
     IMAGE_HEIGHT,
     IMAGE_WIDTH,
     _fit_text,
@@ -81,6 +83,23 @@ Creates an example program."""
         self.assertTrue(
             all(draw.textlength(line, font=font) <= IMAGE_WIDTH - 180 for line in lines)
         )
+
+    def test_renders_milestones_from_post_copy_without_changing_the_summary(self) -> None:
+        text = (
+            "H.R. 42 Passed House on 2026-08-14\n\nAn example bill\n\n"
+            "Progress: [##---] Passed House\nPath: Introduced > House > Senate > President > Law\n\n"
+            "Source: official CRS summary\n\nSummary:\n\nCreates an example program."
+        )
+        card = _parse_story_card(text)
+        self.assertEqual(card.summary, "Creates an example program.")
+        self.assertEqual(card.source, "official CRS summary")
+        self.assertEqual(card.progress.status, "Passed House")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "progress.png"
+            text_to_image(text, str(path))
+            with Image.open(path) as image:
+                self.assertEqual(image.getpixel((120, 1580)), ImageColor.getrgb(GOLD))
+                self.assertEqual(image.getpixel((500, 1580)), ImageColor.getrgb(PAPER_MUTED))
 
 
 if __name__ == "__main__":

@@ -10,6 +10,8 @@ from app import (
     _document_hashtags,
     _fetch_documents,
     _narration_copy,
+    _post_copy,
+    _youtube_metadata,
     _write_debug_artifacts,
     clean_summary_for_post,
     main,
@@ -18,6 +20,7 @@ from app import (
 from util.congress_api import CongressBill
 from util.debug_video import NARRATION_PAUSE_MARKER
 from util.federal_register import ExecutiveOrder
+from util.legislative_progress import legislative_progress
 
 
 class CommandLineTests(unittest.TestCase):
@@ -174,6 +177,19 @@ class TopicHashtagTests(unittest.TestCase):
             summary_source="official CRS summary",
         )
 
+    def test_progress_is_in_post_and_youtube_description_copy(self) -> None:
+        from dataclasses import replace
+
+        bill = replace(self.bill("Example bill"), progress=legislative_progress(
+            "HR", "Example bill", [{"text": "Passed House."}]
+        ))
+        tweet, short_tweet, image_text = _post_copy(bill, "Creates an example program.")
+        for copy in (tweet, short_tweet, image_text):
+            self.assertIn("Progress: [##---] Passed House", copy)
+        _, description, _ = _youtube_metadata(bill, image_text)
+        self.assertIn("Progress: [##---] Passed House", description)
+        self.assertIn("Official source:", description)
+
     def test_covers_new_policy_areas(self) -> None:
         cases = [
             ("Credit Union Investment Authority Act", "Allows investments in corporate debt and asset-backed securities.", ["#Banking", "#FinancialMarkets"]),
@@ -198,6 +214,7 @@ class TopicHashtagTests(unittest.TestCase):
         )
         self.assertEqual(len(tags), 7)
 
+    @patch("app.MAX_TOPIC_HASHTAGS", 2)
     def test_handles_case_hyphens_and_plural_terms(self) -> None:
         tags = _document_hashtags(
             self.bill("MENTAL–HEALTH Services Act"),
@@ -205,6 +222,7 @@ class TopicHashtagTests(unittest.TestCase):
         )
         self.assertEqual(tags[7:], ["#MentalHealth", "#Healthcare"])
 
+    @patch("app.MAX_TOPIC_HASHTAGS", 2)
     def test_specific_topics_take_priority_and_keep_two_tag_limit(self) -> None:
         tags = _document_hashtags(
             self.bill("Technology and Infrastructure Act"),

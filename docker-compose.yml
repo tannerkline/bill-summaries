@@ -12,6 +12,8 @@ services:
       - CONGRESS_API_KEY=${CONGRESS_API_KEY}
       # The current Congress; update this at the start of each new Congress.
       - CONGRESS_NUMBER=${CONGRESS_NUMBER:-119}
+      # Skip bills that have not advanced beyond introduction/referral/hearings.
+      - CONGRESS_BILL_FILTER=${CONGRESS_BILL_FILTER:-committee_or_later}
       - CONGRESS_API_TIMEOUT_SECONDS=${CONGRESS_API_TIMEOUT_SECONDS:-30}
       - CONGRESS_BILL_TEXT_MAX_CHARACTERS=${CONGRESS_BILL_TEXT_MAX_CHARACTERS:-100000}
       # The Federal Register API is public and does not require an API key.

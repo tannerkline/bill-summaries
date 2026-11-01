@@ -57,6 +57,8 @@ into the application image:
 CONGRESS_API_KEY=your-key
 # Optional: defaults to the current (119th) Congress. Update in 2027.
 CONGRESS_NUMBER=119
+# Optional: committee_or_later (default), or all to include early-stage bills.
+CONGRESS_BILL_FILTER=committee_or_later
 # Optional: defaults to 30 seconds
 CONGRESS_API_TIMEOUT_SECONDS=30
 # Optional: caps raw bill-text fallback before it is sent to Ollama
@@ -177,6 +179,17 @@ The same selection supplies YouTube description hashtags and video tags.
 
 ## Data Sources
 
+By default, bills must have reached full-committee reporting/approval, committee
+discharge, or floor consideration before the app summarizes or posts them.
+Introductions, referrals, hearings, markups without approval, subcommittee-only
+approvals, and calendar placement alone do not qualify. The filter checks action
+history through the selected date, so later referrals do not hide earlier
+progress. Once a bill qualifies, later updates remain eligible. Executive Orders
+are unaffected. This reduces volume but does not impose a daily upload cap.
+Skipped bills are logged with their latest action; missing/invalid action data
+does not silently bypass the filter. Set `CONGRESS_BILL_FILTER=all` in `.env` to
+restore the previous behavior. Debug runs use the same filter as publishing.
+
 Bill data comes from the authenticated [Congress.gov API](https://api.congress.gov/),
 rather than browser automation. The application prefers the most recent
 official CRS summary; when none exists, it summarizes the latest available
@@ -184,6 +197,26 @@ official bill text. Executive Orders come from the public
 [Federal Register API](https://www.federalregister.gov/developers/documentation/api/v1),
 using its published text (or its abstract only when text is unavailable). Posts
 state which source was used.
+
+## Legislative Progress
+
+Congressional posts include a milestone bar on the PNG card (and therefore in
+the narrated video), plus a text version in post copy and YouTube descriptions.
+Bills follow `Introduced > House > Senate > President > Law`; Senate-originated
+measures show the Senate first. The status also identifies committee/floor
+consideration, unresolved differences, vetoes, and failed passage. Gold segments
+mark recorded milestones; pending segments stay gray, and blocked statuses use
+red. This shows procedural progress, not a probability or estimated time to pass.
+
+The bar uses the full, paginated Congress.gov action history through the post's
+date. Amendment votes and other procedural votes do not count as bill passage.
+Simple resolutions end at their own chamber; concurrent resolutions end with
+Congress. Joint resolutions proposing constitutional amendments omit the
+president/law steps and identify state ratification as a separate requirement.
+Executive Orders keep their signing-date presentation.
+
+Rebuild with `docker compose build app` to include the progress bar in future
+runs. Use `--debug` to review cards and videos before publishing.
 
 ## Machine Learning
 Summaries are generated with the local Ollama model `qwen3.6:35b`. The model is

@@ -349,6 +349,11 @@ def _post_copy(document, summary: str) -> tuple[str, str, str]:
             document.summary_source,
             summary,
         )
+        if document.progress is not None:
+            progress_text = document.progress.post_copy()
+            image_text = image_text.replace("\n\nSource:", f"\n\n{progress_text}\n\nSource:", 1)
+            tweet_text = tweet_text.replace("\n\n", f"\n{progress_text}\n\n", 1)
+            tweet_text_short = tweet_text_short.replace("\n\n", f"\n{progress_text}\n\n", 1)
         return tweet_text, tweet_text_short, image_text
 
     if isinstance(document, ExecutiveOrder):

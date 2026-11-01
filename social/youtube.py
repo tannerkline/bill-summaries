@@ -1,8 +1,10 @@
 """Publish narrated videos to YouTube through its Data API."""
 
+import json
 import logging
 import os
 from pathlib import Path
+import re
 from typing import Optional
 
 
@@ -85,6 +87,28 @@ def _trim(value: str, maximum_length: int) -> str:
     return value.strip()[:maximum_length].rstrip()
 
 
+def _upload_error_detail(error: Exception) -> str:
+    """Keep Google's reason codes without logging request URLs or credentials."""
+    status_code = getattr(getattr(error, "resp", None), "status", None)
+    detail = f"HTTP {status_code}" if status_code else type(error).__name__
+    try:
+        payload = json.loads(getattr(error, "content", b""))
+        entries = payload["error"]["errors"]
+        if not isinstance(entries, list):
+            return detail
+        reasons = []
+        for entry in entries:
+            reason = entry.get("reason") if isinstance(entry, dict) else None
+            if isinstance(reason, str) and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", reason):
+                if reason not in reasons:
+                    reasons.append(reason)
+        if reasons:
+            detail += f"; reason={','.join(reasons)}"
+    except (ValueError, TypeError, KeyError):
+        pass
+    return detail
+
+
 def create_post(video_path: str, title: str, description: str, tags: list[str]) -> bool:
     """Upload an MP4 to the configured YouTube channel.
 
@@ -130,9 +154,7 @@ def create_post(video_path: str, title: str, description: str, tags: list[str]) 
             notifySubscribers=notify_subscribers,
         ).execute()
     except Exception as error:
-        status_code = getattr(getattr(error, "resp", None), "status", None)
-        detail = f"HTTP {status_code}" if status_code else type(error).__name__
-        log.error("YouTube post failed (%s)", detail)
+        log.error("YouTube post failed (%s)", _upload_error_detail(error))
         return False
 
     video_id = response.get("id") if isinstance(response, dict) else None

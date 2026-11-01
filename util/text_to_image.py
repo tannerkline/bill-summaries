@@ -14,6 +14,7 @@ from typing import Iterable
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from util.legislative_progress import LegislativeProgress, progress_from_copy
 
 IMAGE_WIDTH = 1080
 IMAGE_HEIGHT = 1920
@@ -41,6 +42,7 @@ class StoryCard:
     title: str
     source: str
     summary: str
+    progress: LegislativeProgress | None = None
 
 
 def _font(size: int) -> ImageFont.FreeTypeFont:
@@ -207,6 +209,7 @@ def _parse_story_card(text: str) -> StoryCard:
         title=title,
         source=source,
         summary=summary,
+        progress=progress_from_copy(before_summary),
     )
 
 
@@ -290,6 +293,29 @@ def _draw_centered_lines(
         _draw_centered(draw, line, y, font, fill)
         y += line_height + line_spacing
     return y
+
+
+def _draw_progress(draw: ImageDraw.ImageDraw, progress: LegislativeProgress, top: int) -> None:
+    """Draw separate milestone segments with a readable current status."""
+    draw.text((92, top), "LEGISLATIVE PROGRESS", font=_font(22), fill=INK)
+    color = "#A83D32" if progress.blocked else "#315E70"
+    status_font, status_lines, height, spacing = _fit_text(
+        draw, progress.status, 860, 55, range(27, 19, -1), 0.15
+    )
+    _draw_lines(draw, status_lines, 92, top + 34, status_font, color, height, spacing)
+    gap = 12
+    width = (860 - gap * (len(progress.steps) - 1)) / len(progress.steps)
+    for index, (step, reached) in enumerate(zip(progress.steps, progress.reached)):
+        left = round(92 + index * (width + gap))
+        right = round(left + width)
+        draw.rounded_rectangle(
+            (left, top + 98, right, top + 112), radius=7,
+            fill=(color if progress.blocked else GOLD) if reached else PAPER_MUTED,
+        )
+        label_font = _font(21)
+        label_width = draw.textlength(step, font=label_font)
+        draw.text(((left + right - label_width) / 2, top + 125), step,
+                  font=label_font, fill=INK if reached else "#60727E")
 
 
 def text_to_image(text: str, image_path: str) -> None:
@@ -387,7 +413,7 @@ def text_to_image(text: str, image_path: str) -> None:
         draw,
         card.summary,
         860,
-        660,
+        510 if card.progress else 660,
         range(42, 25, -1),
         0.22,
     )
@@ -401,6 +427,9 @@ def text_to_image(text: str, image_path: str) -> None:
         summary_height,
         summary_spacing,
     )
+
+    if card.progress:
+        _draw_progress(draw, card.progress, card_bottom - 300)
 
     source_font = _font(23)
     source_text = _ellipsize(

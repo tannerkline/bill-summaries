@@ -6,10 +6,12 @@ from html import unescape
 from html.parser import HTMLParser
 import logging
 import os
+import re
 from typing import Any, Optional
 
 import requests
 
+from util.legislative_progress import LegislativeProgress, legislative_progress
 
 log = logging.getLogger(__name__)
 
@@ -18,6 +20,7 @@ DEFAULT_TIMEOUT_SECONDS = 30
 MAX_PAGE_SIZE = 250
 DEFAULT_BILL_TEXT_MAX_CHARACTERS = 100_000
 DEFAULT_CONGRESS_NUMBER = 119
+DEFAULT_BILL_FILTER = "committee_or_later"
 
 _BILL_LABELS = {
     "HR": "H.R.",
@@ -79,9 +82,10 @@ class CongressBill:
     latest_action_date: date
     latest_summary: str
     summary_source: str
+    progress: Optional[LegislativeProgress] = None
 
 
-def _configuration() -> tuple[str, int, int, int]:
+def _configuration() -> tuple[str, int, int, int, str]:
     api_key = os.getenv("CONGRESS_API_KEY", "").strip()
     if not api_key:
         raise CongressApiError("CONGRESS_API_KEY is not configured")
@@ -123,7 +127,11 @@ def _configuration() -> tuple[str, int, int, int]:
     if congress_number <= 0:
         raise CongressApiError("CONGRESS_NUMBER must be positive")
 
-    return api_key, timeout_seconds, bill_text_max_characters, congress_number
+    bill_filter = os.getenv("CONGRESS_BILL_FILTER", DEFAULT_BILL_FILTER).strip().lower()
+    if bill_filter not in {"committee_or_later", "all"}:
+        raise CongressApiError("CONGRESS_BILL_FILTER must be committee_or_later or all")
+
+    return api_key, timeout_seconds, bill_text_max_characters, congress_number, bill_filter
 
 
 def _request_json(
@@ -277,6 +285,72 @@ def _latest_bill_text(
     return normalized_text
 
 
+def _action_is_advanced(action: dict[str, Any]) -> bool:
+    """Recognize full-committee reporting/discharge or substantive floor stages.
+
+    Calendars alone do not qualify: a new bill can be placed on a calendar
+    without committee consideration. Hearings and markups alone do not qualify.
+    """
+    if action.get("type") in {"Floor", "ResolvingDifferences", "President", "Veto", "BecameLaw"}:
+        return True
+
+    # These codes are authoritative only for Library of Congress source 9.
+    # https://www.congress.gov/help/field-values/action-codes
+    source = action.get("sourceSystem", {})
+    if isinstance(source, dict) and str(source.get("code")) == "9":
+        if str(action.get("actionCode")) in {
+            "1010", "5000", "5500", "7000", "8000", "9000",
+            "10010", "14000", "14500", "14900", "16000", "17000", "18000",
+        }:
+            return True
+
+    # Latest-action records lack structured codes/types. Senate records also
+    # omit codes, so recognize explicit milestones in their official wording.
+    text = " ".join(str(action.get("text", "")).split())
+    if re.search(r"\bsubcommittee\b", text, re.IGNORECASE):
+        return False
+    return bool(re.search(
+        r"\bordered (?:to be )?reported\b"
+        r"|^(?:reported\b|passed (?:house|senate)\b"
+        r"|agreed to in (?:house|senate)\b"
+        r"|(?:presented to|signed by|vetoed by) president\b"
+        r"|became (?:public|private) law\b)"
+        r"|\bcommittee(?: on [^.]+)? discharged\b"
+        r"|\bcommittee on [^.]+\. reported\b",
+        text, re.IGNORECASE,
+    ))
+
+
+def _bill_actions(
+    session: requests.Session,
+    actions_url: str,
+    target_date: date,
+    api_key: str,
+    timeout_seconds: int,
+) -> list[dict[str, Any]]:
+    """Read all history through the post date for filtering and milestones."""
+    history: list[dict[str, Any]] = []
+    page_url: Optional[str] = actions_url
+    params: Optional[dict[str, Any]] = {"limit": MAX_PAGE_SIZE}
+    while page_url:
+        data = _request_json(session, page_url, api_key, timeout_seconds, params=params)
+        params = None
+        actions = data.get("actions")
+        if not isinstance(actions, list):
+            raise CongressApiError("Congress.gov API returned an invalid bill actions list")
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            action_date = _parse_date(action.get("actionDate"), "action date")
+            if action_date <= target_date:
+                history.append(action)
+        pagination = data.get("pagination", {})
+        page_url = pagination.get("next") if isinstance(pagination, dict) else None
+        if page_url is not None and not isinstance(page_url, str):
+            raise CongressApiError("Congress.gov API returned an invalid actions next-page URL")
+    return history
+
+
 def _bill_from_reference(
     session: requests.Session,
     reference: dict[str, Any],
@@ -284,6 +358,7 @@ def _bill_from_reference(
     api_key: str,
     timeout_seconds: int,
     bill_text_max_characters: int,
+    bill_filter: str,
 ) -> Optional[CongressBill]:
     latest_action = reference.get("latestAction")
     if not isinstance(latest_action, dict):
@@ -303,6 +378,24 @@ def _bill_from_reference(
     congress = bill.get("congress")
     if not bill_type or bill_number is None or congress is None:
         raise CongressApiError("Congress.gov API bill record is missing its identifier")
+
+    actions = bill.get("actions", {})
+    actions_url = actions.get("url") if isinstance(actions, dict) else None
+    if not isinstance(actions_url, str):
+        actions_url = f"{API_ROOT}/bill/{congress}/{bill_type.lower()}/{bill_number}/actions"
+    history = _bill_actions(session, actions_url, target_date, api_key, timeout_seconds)
+    # Keep the list-level latest action when history has not caught up yet.
+    if not any(action.get("text") == latest_action.get("text") for action in history):
+        history.insert(0, latest_action)
+    if bill_filter == "committee_or_later":
+        if not any(_action_is_advanced(action) for action in history):
+            log.info(
+                "Skipping %s %s: no committee reporting, discharge, or floor action "
+                "by %s (latest action: %s)",
+                _BILL_LABELS.get(bill_type, bill_type), bill_number,
+                target_date, latest_action.get("text", "unavailable"),
+            )
+            return None
 
     sponsors = bill.get("sponsors", [])
     sponsor = sponsors[0] if isinstance(sponsors, list) and sponsors else {}
@@ -354,6 +447,7 @@ def _bill_from_reference(
         latest_action_date=target_date,
         latest_summary=latest_summary,
         summary_source=summary_source,
+        progress=legislative_progress(bill_type, str(bill.get("title", "")), history),
     )
 
 
@@ -367,7 +461,7 @@ def fetch_bills_with_latest_action_on(
     action date. We therefore request the target date and the following day,
     then filter records using their actual ``latestAction.actionDate``.
     """
-    api_key, timeout_seconds, bill_text_max_characters, congress_number = _configuration()
+    api_key, timeout_seconds, bill_text_max_characters, congress_number, bill_filter = _configuration()
     client = session or requests.Session()
     start = f"{target_date.isoformat()}T00:00:00Z"
     end = f"{(target_date + timedelta(days=2)).isoformat()}T00:00:00Z"
@@ -383,7 +477,7 @@ def fetch_bills_with_latest_action_on(
     bills: list[CongressBill] = []
     records_seen = 0
     action_date_matches = 0
-    sources_unavailable = 0
+    skipped_bills = 0
 
     while page_url:
         data = _request_json(
@@ -414,11 +508,12 @@ def fetch_bills_with_latest_action_on(
                 api_key,
                 timeout_seconds,
                 bill_text_max_characters,
+                bill_filter,
             )
             if bill is not None:
                 bills.append(bill)
             else:
-                sources_unavailable += 1
+                skipped_bills += 1
 
         pagination = data.get("pagination", {})
         page_url = pagination.get("next") if isinstance(pagination, dict) else None
@@ -427,12 +522,13 @@ def fetch_bills_with_latest_action_on(
 
     log.info(
         "Congress.gov API scan for %s: %d record(s) seen, %d latest-action "
-        "match(es), %d bill(s) without a usable CRS summary or bill text, "
-        "%d eligible bill(s)",
+        "match(es), %d bill(s) skipped by progress filter or missing source, "
+        "%d eligible bill(s) (filter=%s)",
         target_date,
         records_seen,
         action_date_matches,
-        sources_unavailable,
+        skipped_bills,
         len(bills),
+        bill_filter,
     )
     return bills

@@ -1,5 +1,6 @@
 from datetime import date
 from pathlib import Path
+import json
 import os
 import sys
 import tempfile
@@ -9,10 +10,33 @@ from unittest.mock import Mock, patch
 
 from app import _youtube_metadata
 from util.congress_api import CongressBill
-from social.youtube import _credentials_from_environment, _upload_configuration, create_post
+from social.youtube import (
+    _credentials_from_environment, _upload_configuration, _upload_error_detail, create_post,
+)
 
 
 class YouTubeUploadTests(unittest.TestCase):
+    def test_error_detail_distinguishes_upload_limit_quota_and_metadata_errors(self) -> None:
+        for status, reason in [(400, "uploadLimitExceeded"), (403, "quotaExceeded"), (400, "invalidTags")]:
+            with self.subTest(reason=reason):
+                error = RuntimeError("Request URL with credentials must not be logged")
+                error.resp = types.SimpleNamespace(status=status)
+                error.content = json.dumps({"error": {
+                    "message": "Do not log raw response messages",
+                    "errors": [{"reason": reason}],
+                }}).encode()
+                self.assertEqual(_upload_error_detail(error), f"HTTP {status}; reason={reason}")
+
+    def test_error_detail_handles_unstructured_errors(self) -> None:
+        self.assertEqual(_upload_error_detail(RuntimeError("private data")), "RuntimeError")
+        for content in [b"not JSON", b"[]", b"null", b'{"error": null}', b'{"error": {"errors": null}}',
+                        b'{"error": {"errors": [{"reason": "https://example.test?token=secret"}]}}']:
+            with self.subTest(content=content):
+                error = RuntimeError("private data")
+                error.resp = types.SimpleNamespace(status=400)
+                error.content = content
+                self.assertEqual(_upload_error_detail(error), "HTTP 400")
+
     @patch.dict(os.environ, {}, clear=True)
     def test_defaults_upload_visibility_to_public(self) -> None:
         self.assertEqual(_upload_configuration(), ("public", False))
